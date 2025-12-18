@@ -59,4 +59,4 @@ jobs:
           body: ${{ steps.get_release.outputs.body }}
           draft: false
           prerelease: false
-          artifacts: "dist/Throne-${{ steps.version.outputs.clean_tag }}-windows64-installer.exe"
+          artifacts: "dist/Throne-windows64-installer.exe"
