@@ -3,7 +3,7 @@ name: Mirror Throne release
 on:
   schedule:
     - cron: "0 * * * *"
-  workflow_dispatch:     
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -37,7 +37,6 @@ jobs:
         id: version
         run: |
           TAG="${{ steps.get_release.outputs.tag_name }}"
-          # убираем возможный префикс v
           CLEAN_TAG="${TAG#v}"
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "clean_tag=${CLEAN_TAG}" >> $GITHUB_OUTPUT
@@ -50,11 +49,17 @@ jobs:
           fileName: "Throne-${{ steps.version.outputs.clean_tag }}-windows64-installer.exe"
           latest: false
           out-file-path: "dist"
+
+      - name: Rename installer to fixed name
+        run: |
+          mv "dist/Throne-${{ steps.version.outputs.clean_tag }}-windows64-installer.exe" \
+             "dist/Throne-windows64-installer.exe"
+
       - name: Create release in fork
         id: create_release
         uses: ncipollo/release-action@v1
         with:
-          tag: "Throne"
+          tag: "mirror-${{ steps.version.outputs.clean_tag }}"
           name: "Mirror Throne ${{ steps.version.outputs.clean_tag }}"
           body: ${{ steps.get_release.outputs.body }}
           draft: false
