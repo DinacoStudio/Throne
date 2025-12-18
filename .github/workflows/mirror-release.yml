@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Get latest release info from upstream
-        id: get_release
+        id: get_upstream_release
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -33,35 +33,74 @@ jobs:
             core.setOutput('tag_name', release.data.tag_name);
             core.setOutput('name', release.data.name || release.data.tag_name);
             core.setOutput('body', release.data.body || '');
-      - name: Normalize version
-        id: version
+      - name: Normalize upstream version
+        id: upstream_version
         run: |
-          TAG="${{ steps.get_release.outputs.tag_name }}"
+          TAG="${{ steps.get_upstream_release.outputs.tag_name }}"
           CLEAN_TAG="${TAG#v}"
           echo "tag=${TAG}" >> $GITHUB_OUTPUT
           echo "clean_tag=${CLEAN_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Get latest release in fork (if exists)
+        id: get_fork_release
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            try {
+              const release = await github.rest.repos.getLatestRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+              });
+              core.setOutput('tag_name', release.data.tag_name);
+            } catch (error) {
+              // если релизов ещё нет, просто ничего не ставим
+              core.setOutput('tag_name', '');
+            }
+
+      - name: Check if version already mirrored
+        id: check_version
+        run: |
+          UPSTREAM="mirror-${{ steps.upstream_version.outputs.clean_tag }}"
+          FORK_TAG="${{ steps.get_fork_release.outputs.tag_name }}"
+          echo "Upstream tag should be mirrored as: $UPSTREAM"
+          echo "Latest fork tag: $FORK_TAG"
+
+          if [ "$FORK_TAG" = "$UPSTREAM" ]; then
+            echo "already_mirrored=true" >> $GITHUB_OUTPUT
+          else
+            echo "already_mirrored=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Stop if already mirrored
+        if: steps.check_version.outputs.already_mirrored == 'true'
+        run: |
+          echo "Эта версия уже есть в форке, новый релиз создавать не нужно."
+          exit 0
 
       - name: Download installer from upstream release
         uses: robinraju/release-downloader@v1
         with:
           repository: "throneproj/Throne"
-          tag: "${{ steps.version.outputs.tag }}"
-          fileName: "Throne-${{ steps.version.outputs.clean_tag }}-windows64-installer.exe"
+          tag: "${{ steps.upstream_version.outputs.tag }}"
+          fileName: "Throne-${{ steps.upstream_version.outputs.clean_tag }}-windows64-installer.exe"
           latest: false
           out-file-path: "dist"
 
       - name: Rename installer to fixed name
         run: |
-          mv "dist/Throne-${{ steps.version.outputs.clean_tag }}-windows64-installer.exe" \
+          mv "dist/Throne-${{ steps.upstream_version.outputs.clean_tag }}-windows64-installer.exe" \
              "dist/Throne-windows64-installer.exe"
 
       - name: Create release in fork
         id: create_release
         uses: ncipollo/release-action@v1
         with:
-          tag: "mirror-${{ steps.version.outputs.clean_tag }}"
-          name: "Mirror Throne ${{ steps.version.outputs.clean_tag }}"
-          body: ${{ steps.get_release.outputs.body }}
+          tag: "mirror-${{ steps.upstream_version.outputs.clean_tag }}"
+          name: "Mirror Throne ${{ steps.upstream_version.outputs.clean_tag }}"
+          body: ${{ steps.get_upstream_release.outputs.body }}
           draft: false
           prerelease: false
           artifacts: "dist/Throne-windows64-installer.exe"
+          skipIfReleaseExists: true
