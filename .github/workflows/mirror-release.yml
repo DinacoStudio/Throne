@@ -1,0 +1,62 @@
+name: Mirror Throne release
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:     
+
+permissions:
+  contents: write
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+
+      - name: Get latest release info from upstream
+        id: get_release
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const upstreamOwner = 'throneproj';
+            const upstreamRepo  = 'Throne';
+
+            const release = await github.rest.repos.getLatestRelease({
+              owner: upstreamOwner,
+              repo: upstreamRepo,
+            });
+
+            core.setOutput('tag_name', release.data.tag_name);
+            core.setOutput('name', release.data.name || release.data.tag_name);
+            core.setOutput('body', release.data.body || '');
+      - name: Normalize version
+        id: version
+        run: |
+          TAG="${{ steps.get_release.outputs.tag_name }}"
+          # убираем возможный префикс v
+          CLEAN_TAG="${TAG#v}"
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "clean_tag=${CLEAN_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Download installer from upstream release
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: "throneproj/Throne"
+          tag: "${{ steps.version.outputs.tag }}"
+          fileName: "Throne-${{ steps.version.outputs.clean_tag }}-windows64-installer.exe"
+          latest: false
+          out-file-path: "dist"
+      - name: Create release in fork
+        id: create_release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: "Throne"
+          name: "Mirror Throne ${{ steps.version.outputs.clean_tag }}"
+          body: ${{ steps.get_release.outputs.body }}
+          draft: false
+          prerelease: false
+          artifacts: "dist/Throne-${{ steps.version.outputs.clean_tag }}-windows64-installer.exe"
